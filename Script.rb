@@ -26,12 +26,25 @@
 # Mode. You can define more on 'def self.current_mode', see the instruction on
 # this method.
 #
+#=== EXAMPLES ==================================================================
+#
+# The below example creates an easy mode who loads another party if defined and
+# nothing more. We will choose 50 as the ID jump, so, instead of
+# [TEAMROCKET_M,Grunt,1] team being load, the [TEAMROCKET_M,Grunt,51] will be
+# load instead, if it exists. After line '# Add new modes HERE' add: 
+#
+#  my_easy_mode = Difficulty.new
+#  my_easy_mode.id_jump = 50
+#  difficulty_hash[4] = my_easy_mode
+#
+# And set game variable 90 value to 4 (I suggest to do this by events).
+#
 #===============================================================================
 
 if !PluginManager.installed?("Difficulty Modes")
   PluginManager.register({                                                 
     :name    => "Difficulty Modes",                                        
-    :version => "1.1",                                                     
+    :version => "1.1.1",                                                     
     :link    => "https://www.pokecommunity.com/showthread.php?t=300975",             
     :credits => "FL"
   })
@@ -121,8 +134,10 @@ module DifficultyModes
       next 100
     }
     difficulty_hash[3] = hard_mode
-
     
+
+    # Add new modes HERE
+
     return difficulty_hash[pbGet(DifficultyModes::VARIABLE)]
   end 
   
@@ -172,15 +187,9 @@ module DifficultyModes
   end  
 end
 
-Events.onWildPokemonCreate+=proc {|sender,e|
-  pokemon = e[0]
-  pokemon.level = DifficultyModes.apply_wild_level_proc(pokemon)
-  pokemon.calc_stats
-}
-
 alias :_pbLoadTrainer_FL_dif :pbLoadTrainer
 def pbLoadTrainer(tr_type, tr_name, tr_id = 0)
-  if DifficultyModes.current_mode
+  if DifficultyModes.current_mode && DifficultyModes.current_mode.id_jump != 0
     ret = _pbLoadTrainer_FL_dif(
       tr_type, tr_name, DifficultyModes.current_mode.id_jump + tr_id
     )
@@ -210,15 +219,38 @@ class Trainer
   end
 end
 
-module BattleHandlers
-  class << self
-    alias :_triggerExpGainModifierItem_FL_dif :triggerExpGainModifierItem
-    def triggerExpGainModifierItem(item,battler,exp)
-      ret = _triggerExpGainModifierItem_FL_dif(item,battler,exp)
-      if DifficultyModes.current_mode
-        ret = DifficultyModes.apply_exp_proc(ret>0 ? ret : exp,battler)
+class Battle
+  module ItemEffects
+    class << self
+      # Essentials v19- compatibility
+      def triggerExpGainModifier(item,battler,exp)
+        BattleHandlers.triggerExpGainModifierItem(item,battler,exp)
+      end unless method_defined?(:triggerExpGainModifier)
+
+      alias :_triggerExpGainModifier_FL_dif :triggerExpGainModifier
+      def triggerExpGainModifierItem(item,battler,exp)
+        ret = _triggerExpGainModifier_FL_dif(item,battler,exp)
+        if DifficultyModes.current_mode
+          ret = DifficultyModes.apply_exp_proc(ret>0 ? ret : exp,battler)
+        end
+        return ret
       end
-      return ret
     end
   end
+end
+
+# Essentials v19- compatibility
+if defined?(Events) && Events.respond_to?(:onWildPokemonCreate) 
+  Events.onWildPokemonCreate+=proc {|sender,e|
+    pkmn = e[0]
+    pkmn.level = DifficultyModes.apply_wild_level_proc(pkmn)
+    pkmn.calc_stats
+  }
+else
+  EventHandlers.add(:on_wild_pokemon_created, :difficulty_mode,
+    proc { |pkmn|
+      pkmn.level = DifficultyModes.apply_wild_level_proc(pkmn)
+      pkmn.calc_stats
+    }
+  )
 end
